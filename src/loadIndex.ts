@@ -6,11 +6,13 @@ const DEFAULT_INDEX_FALLBACKS = ["./mcp-index.json", "./dist/mcp-index.json"];
 
 /**
  * Resolve path to mcp-index.json from env or fallbacks.
+ * Returns null if no index file exists (avoids using cwd as docs root when index is missing).
  */
-export function getIndexPath(): string {
+export function getIndexPath(): string | null {
   const fromEnv = process.env.VITEPRESS_INDEX_PATH;
   if (fromEnv) {
-    return path.resolve(fromEnv);
+    const resolved = path.resolve(fromEnv);
+    return fs.existsSync(resolved) ? resolved : null;
   }
   const cwd = process.cwd();
   for (const fallback of DEFAULT_INDEX_FALLBACKS) {
@@ -19,7 +21,7 @@ export function getIndexPath(): string {
       return resolved;
     }
   }
-  return path.resolve(cwd, DEFAULT_INDEX_FALLBACKS[0]);
+  return null;
 }
 
 /**

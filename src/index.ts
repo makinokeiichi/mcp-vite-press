@@ -12,7 +12,18 @@ import {
 } from "./loadIndex.js";
 import type { McpIndex } from "./types.js";
 
+/** Allowed file extensions for read_doc_page (case-insensitive). */
+const ALLOWED_EXTENSIONS = new Set([".md", ".html", ".htm", ".txt"]);
+/** Max file size for read_doc_page (2MB). */
+const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024;
+
 const indexPath = getIndexPath();
+if (indexPath === null) {
+  console.error(
+    "mcp-vite-press: mcp-index.json が見つかりません。VITEPRESS_INDEX_PATH を設定するか、カレントディレクトリに mcp-index.json を配置してください。"
+  );
+  process.exit(1);
+}
 const docsRoot = getDocsRoot(indexPath);
 const indexEntries: McpIndex = loadIndex(indexPath);
 
@@ -48,21 +59,31 @@ function searchEntries(query: string, entries: McpIndex, limit = 20): McpIndex {
 
 /**
  * Resolve and validate path: must be under docsRoot, no directory traversal.
+ * Uses realpath to prevent escaping docsRoot via symlinks.
  */
 function resolveDocPath(relativePath: string): string | null {
-  let normalized = path.normalize(relativePath);
-  if (normalized.startsWith("." + path.sep)) {
-    normalized = normalized.slice(path.sep.length + 1);
-  }
+  const normalized = path.normalize(relativePath).replace(/^(\.\/)+/, "");
   if (normalized.includes("..") || path.isAbsolute(normalized)) {
     return null;
   }
   const resolved = path.resolve(docsRoot, normalized);
-  const realRoot = path.resolve(docsRoot);
-  if (!resolved.startsWith(realRoot)) {
+  let realRoot: string;
+  let realTarget: string;
+  try {
+    realRoot = fs.realpathSync(docsRoot);
+    realTarget = fs.realpathSync(resolved);
+  } catch {
     return null;
   }
-  return resolved;
+  const relative = path.relative(realRoot, realTarget);
+  if (
+    relative === ".." ||
+    relative.startsWith(".." + path.sep) ||
+    path.isAbsolute(relative)
+  ) {
+    return null;
+  }
+  return realTarget;
 }
 
 server.registerTool(
@@ -98,7 +119,7 @@ server.registerTool(
   "read_doc_page",
   {
     description:
-      "指定したパスのドキュメント（MarkdownまたはHTML）の内容を読み取って返します。path は VITEPRESS_DOCS_ROOT からの相対パスです。",
+      "指定したパスのドキュメント（.md / .html / .htm / .txt、上限2MB）の内容を読み取って返します。path は VITEPRESS_DOCS_ROOT からの相対パスです。",
     inputSchema: z.object({
       path: z.string().describe("ドキュメントの相対パス（例: guide/getting-started.md）"),
     }),
@@ -122,6 +143,30 @@ server.registerTool(
           {
             type: "text",
             text: `ファイルが見つかりません: ${relativePath}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    const ext = path.extname(resolved).toLowerCase();
+    if (!ALLOWED_EXTENSIONS.has(ext)) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `許可されていない拡張子です: ${relativePath}（許可: .md, .html, .htm, .txt）`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    const stat = fs.statSync(resolved);
+    if (stat.size > MAX_FILE_SIZE_BYTES) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `ファイルが大きすぎます: ${relativePath}（上限: ${MAX_FILE_SIZE_BYTES} bytes）`,
           },
         ],
         isError: true,
