@@ -111,7 +111,7 @@ export default defineConfig({
     const pages = await loader.load()
     const indexData = pages.map((p) => ({
       // p.url（例: /guide/）を VITEPRESS_DOCS_ROOT 基準のファイルパス（例: guide/index.md）に変換
-      path: p.url.replace(/^\//, '').replace(/\/$/, '/index').replace(/\.html$/, '') + '.md',
+      path: p.url === '/' ? 'index.md' : p.url.replace(/^\//, '').replace(/\/$/, '/index').replace(/\.html$/, '') + '.md',
       title: p.frontmatter?.title ?? p.title ?? 'Untitled',
       snippet: p.excerpt ?? p.frontmatter?.description ?? '',
     }))
